@@ -1,0 +1,1 @@
+"""Route modules. Keep route handlers thin — logic lives in services."""
