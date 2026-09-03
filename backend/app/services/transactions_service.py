@@ -58,13 +58,6 @@ def list_transactions(
         # Filter matches nothing.
         return [], 0
 
-    event_count_subq = (
-        select(func.count(TransactionEvent.id))
-        .where(TransactionEvent.payment_id == Payment.id)
-        .correlate(Payment)
-        .scalar_subquery()
-    )
-
     base = (
         select(Payment.id)
         .join(TransactionEvent, TransactionEvent.payment_id == Payment.id)
@@ -92,14 +85,56 @@ def list_transactions(
         .limit(limit)
     ).all()
 
+    if not rows:
+        return [], total
+
+    # All per-row lookups below run as a handful of batched queries instead of
+    # one round trip per row (2 x `limit` queries against a remote database is
+    # the difference between a sub-second page and a request that blows past
+    # the frontend's timeout). Results are identical: one event count and one
+    # scenario instance per payment on the page.
+    page_payment_ids = [payment.id for payment, *_ in rows]
+
+    count_rows = session.execute(
+        select(TransactionEvent.payment_id, func.count(TransactionEvent.id))
+        .where(TransactionEvent.payment_id.in_(page_payment_ids))
+        .group_by(TransactionEvent.payment_id)
+    ).all()
+    event_counts: dict[uuid.UUID, int] = {
+        payment_id: count for payment_id, count in count_rows
+    }
+
+    # Each payment belongs to one journey (one correlation), so the first
+    # event in timestamp/id order pins the correlation deterministically.
+    correlation_rows = session.execute(
+        select(TransactionEvent.payment_id, TransactionEvent.correlation_id)
+        .where(TransactionEvent.payment_id.in_(page_payment_ids))
+        .order_by(TransactionEvent.timestamp.asc(), TransactionEvent.id)
+    ).all()
+    payment_correlation: dict[uuid.UUID, uuid.UUID] = {}
+    for payment_id, correlation_id in correlation_rows:
+        payment_correlation.setdefault(payment_id, correlation_id)
+
+    scenario_rows = session.scalars(
+        select(ScenarioInstance).where(
+            ScenarioInstance.correlation_id.in_(
+                list(payment_correlation.values())
+            )
+        )
+    ).all()
+    scenario_by_correlation = {
+        instance.correlation_id: instance for instance in scenario_rows
+    }
+
     items = []
     for payment, order, customer, _merchant in rows:
-        count = session.scalar(
-            select(func.count()).select_from(TransactionEvent).where(
-                TransactionEvent.payment_id == payment.id
-            )
-        ) or 0
-        scenario_instance = _payment_scenario(session, payment.id)
+        count = event_counts.get(payment.id, 0) or 0
+        correlation_id = payment_correlation.get(payment.id)
+        scenario_instance = (
+            scenario_by_correlation.get(correlation_id)
+            if correlation_id is not None
+            else None
+        )
         definition = (
             SCENARIO_BY_TYPE.get(scenario_instance.scenario_type)
             if scenario_instance
