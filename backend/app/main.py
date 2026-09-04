@@ -3,6 +3,8 @@
 Run with:  uvicorn app.main:app --reload
 """
 
+import threading
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -41,6 +43,18 @@ def create_app() -> FastAPI:
     app.include_router(api_router)
     # Root-level liveness endpoint (unversioned convenience path).
     app.include_router(health_router)
+
+    # Production warm-up: pre-compute the deterministic compound-failure
+    # dataset scan in the background so the first /failures page load is
+    # fast. Best-effort — a cold cache simply recomputes on first request.
+    if settings.app_env == "production":
+        from app.services import failures_service
+
+        threading.Thread(
+            target=failures_service.warm_failures_cache,
+            name="failures-cache-warm",
+            daemon=True,
+        ).start()
 
     return app
 

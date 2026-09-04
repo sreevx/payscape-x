@@ -17,11 +17,14 @@ outcome engine uses, so journeys that can never be FAILED are skipped —
 the filter list mirrors `app/outcome/rules.py` and is asserted by tests.
 """
 
+import threading
+import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.events import EventType
 from app.failures.engine import analyze
@@ -225,22 +228,21 @@ def _list_scope(
     return "SINGLE_TRANSACTION", 1, skus
 
 
-def list_failures(
-    session: Session,
-    limit: int,
-    offset: int,
-    severity: Optional[str] = None,
-    failure_type: Optional[str] = None,
-    outcome: Optional[str] = None,
-    scope: Optional[str] = None,
-) -> tuple[list[FailureListItem], int]:
-    outcome_filter = outcome
-    """Detected compound failures across the dataset (deterministic).
+# The deterministic dataset scan re-runs the Part 3-6 pipeline per
+# candidate transaction. On PostgreSQL that pipeline is IO-bound (many
+# round-trips to the database), so the scan runs across a small thread
+# pool — every worker uses its own session/connection — and its output,
+# which is a pure function of the seeded records, is memoized for a short
+# TTL so repeat page loads are instant. Non-PostgreSQL engines (the
+# in-memory SQLite test suite) keep the sequential single-session path.
+_LIST_SCAN_THREADS = 5
+_LIST_CACHE_TTL_SECONDS = 300
+_list_cache_lock = threading.Lock()
+_list_cache: dict = {}
 
-    Only payments carrying a FAILED-capable marker are deep-analyzed; the
-    rest cannot be compound failures. The scan is bounded by the seeded
-    dataset and documented as such — it is not an unbounded table scan.
-    """
+
+def _marker_ordered_instances(session: Session) -> list[ScenarioInstance]:
+    """Candidate instances carrying any FAILED-capable event marker."""
     instances = _load_instances(session)
     marker_payments = {
         str(payment_id)
@@ -254,7 +256,7 @@ def list_failures(
     def instance_key(instance: ScenarioInstance):
         return int(instance.metadata_.get("journey_index", 0))
 
-    ordered_instances = sorted(
+    return sorted(
         (
             instance
             for instance in instances.values()
@@ -263,75 +265,182 @@ def list_failures(
         key=instance_key,
     )
 
-    all_items: list[FailureListItem] = []
-    for instance in ordered_instances:
-        transaction_id = str(instance.metadata_["payment_id"])
+
+def _analyze_instance(
+    session: Session, instance: ScenarioInstance
+) -> Optional[FailureListItem]:
+    """Deep-analyze one candidate. Returns None when it is not a detected
+    compound failure (outcome not FAILED, or no multi-stage chain)."""
+    transaction_id = str(instance.metadata_["payment_id"])
+    try:
+        payment_uuid = uuid.UUID(transaction_id)
+    except (ValueError, AttributeError):
+        return None
+    journey, integrity, _graph = journeys_service._reconstruct_all(
+        session, transaction_id
+    )
+    if journey is None:
+        return None
+    context = load_domain_context(session, payment_uuid)
+    if context is None:
+        return None
+    evidence = build_evidence(journey, integrity, context)
+    consistency = build_consistency(journey, context)
+    outcome = build_outcome(journey, integrity, evidence, consistency)
+    if outcome.outcome != "FAILED":
+        return None
+    failure = build_failure(journey, integrity, evidence, consistency, outcome)
+    if not failure.detected:
+        return None
+
+    primary = failure.primary_failure
+    primary_kind = primary.kind if primary is not None else None
+    primary_label = primary.label if primary is not None else None
+    scope_value, affected_total, shared_skus = _list_scope(session, payment_uuid)
+
+    order = None
+    if journey.order_id:
         try:
-            payment_uuid = uuid.UUID(transaction_id)
+            order = session.get(Order, uuid.UUID(journey.order_id))
         except (ValueError, AttributeError):
-            continue
-        journey, integrity, _graph = journeys_service._reconstruct_all(
-            session, transaction_id
+            order = None
+    return FailureListItem(
+        transaction_id=transaction_id,
+        order_id=journey.order_id or "",
+        external_order_id=order.external_order_id if order else "",
+        scenario_type=instance.scenario_type.value,
+        scenario_slug=str(instance.scenario_type.value).lower(),
+        outcome=outcome.outcome,
+        severity=failure.severity,
+        classification=failure.classification,
+        detected=True,
+        primary_failure_kind=primary_kind,
+        primary_failure_label=primary_label,
+        root_cause_kinds=[root.kind for root in failure.root_causes],
+        chain_length=len(failure.failure_chain),
+        distinct_stages=sorted(
+            {node.stage for node in failure.failure_chain}
+        ),
+        confidence=failure.confidence,
+        scope=scope_value,
+        affected_transactions=affected_total,
+        shared_skus=shared_skus if scope_value == "MULTI_TRANSACTION" else [],
+    )
+
+
+def _scan_sequential(
+    session: Session, ordered_instances: list[ScenarioInstance]
+) -> list[FailureListItem]:
+    """Single-session scan (non-PostgreSQL engines, tests)."""
+    items: list[FailureListItem] = []
+    for instance in ordered_instances:
+        item = _analyze_instance(session, instance)
+        if item is not None:
+            items.append(item)
+    return items
+
+
+def _scan_parallel(
+    bind, ordered_instances: list[ScenarioInstance]
+) -> list[FailureListItem]:
+    """Threaded scan with one session/connection per worker. Deterministic:
+    results are reassembled in the input order and each item is a pure
+    function of its records, so the output equals the sequential scan."""
+    factory = sessionmaker(bind=bind, autoflush=False, expire_on_commit=False)
+    workers = max(1, min(_LIST_SCAN_THREADS, len(ordered_instances)))
+
+    def work(instance: ScenarioInstance) -> Optional[FailureListItem]:
+        session = factory()
+        try:
+            return _analyze_instance(session, instance)
+        finally:
+            session.close()
+
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        results = list(executor.map(work, ordered_instances))
+    return [item for item in results if item is not None]
+
+
+def _cached_dataset_items(
+    bind, ordered_instances: list[ScenarioInstance]
+) -> list[FailureListItem]:
+    """Memoized full detected list (PostgreSQL path only)."""
+    global _list_cache
+    with _list_cache_lock:
+        entry = _list_cache.get("entry")
+        if entry is not None and time.monotonic() - entry["at"] < _LIST_CACHE_TTL_SECONDS:
+            return entry["items"]
+    items = _scan_parallel(bind, ordered_instances)
+    with _list_cache_lock:
+        _list_cache = {"entry": {"at": time.monotonic(), "items": items}}
+    return items
+
+
+def _dataset_items(
+    session: Session, ordered_instances: list[ScenarioInstance]
+) -> list[FailureListItem]:
+    """Detected compound failures across the dataset (deterministic).
+
+    Only payments carrying a FAILED-capable marker are deep-analyzed; the
+    rest cannot be compound failures. The scan is bounded by the seeded
+    dataset and documented as such — it is not an unbounded table scan.
+    On PostgreSQL the scan is threaded and briefly memoized so the
+    /failures page stays responsive; other engines run sequentially.
+    """
+    bind = session.get_bind()
+    if getattr(bind, "dialect", None) is not None and bind.dialect.name == "postgresql":
+        return _cached_dataset_items(bind, ordered_instances)
+    return _scan_sequential(session, ordered_instances)
+
+
+def list_failures(
+    session: Session,
+    limit: int,
+    offset: int,
+    severity: Optional[str] = None,
+    failure_type: Optional[str] = None,
+    outcome: Optional[str] = None,
+    scope: Optional[str] = None,
+) -> tuple[list[FailureListItem], int]:
+    """Detected compound failures across the dataset (deterministic)."""
+    outcome_filter = outcome
+    detected_items = _dataset_items(session, _marker_ordered_instances(session))
+    filtered = [
+        item
+        for item in detected_items
+        if (not severity or item.severity == severity.upper())
+        and (
+            not failure_type
+            or item.primary_failure_kind == failure_type.upper()
         )
-        if journey is None:
-            continue
-        context = load_domain_context(session, payment_uuid)
-        if context is None:
-            continue
-        evidence = build_evidence(journey, integrity, context)
-        consistency = build_consistency(journey, context)
-        outcome = build_outcome(journey, integrity, evidence, consistency)
-        if outcome.outcome != "FAILED":
-            continue
-        # All detected compound failures carry a FAILED outcome, so any
+        # Every detected compound failure carries a FAILED outcome, so any
         # other outcome filter intentionally returns nothing.
-        if outcome_filter and outcome_filter.upper() != "FAILED":
-            continue
-        failure = build_failure(journey, integrity, evidence, consistency, outcome)
-        if not failure.detected:
-            continue
-        if severity and failure.severity != severity.upper():
-            continue
-
-        primary = failure.primary_failure
-        primary_kind = primary.kind if primary is not None else None
-        primary_label = primary.label if primary is not None else None
-        if failure_type and primary_kind != failure_type.upper():
-            continue
-
-        scope_value, affected_total, shared_skus = _list_scope(session, payment_uuid)
-        if scope and scope_value != scope.upper().replace("-", "_"):
-            continue
-
-        order = None
-        if journey.order_id:
-            try:
-                order = session.get(Order, uuid.UUID(journey.order_id))
-            except (ValueError, AttributeError):
-                order = None
-        all_items.append(
-            FailureListItem(
-                transaction_id=transaction_id,
-                order_id=journey.order_id or "",
-                external_order_id=order.external_order_id if order else "",
-                scenario_type=instance.scenario_type.value,
-                scenario_slug=str(instance.scenario_type.value).lower(),
-                outcome=outcome.outcome,
-                severity=failure.severity,
-                classification=failure.classification,
-                detected=True,
-                primary_failure_kind=primary_kind,
-                primary_failure_label=primary_label,
-                root_cause_kinds=[root.kind for root in failure.root_causes],
-                chain_length=len(failure.failure_chain),
-                distinct_stages=sorted(
-                    {node.stage for node in failure.failure_chain}
-                ),
-                confidence=failure.confidence,
-                scope=scope_value,
-                affected_transactions=affected_total,
-                shared_skus=shared_skus if scope_value == "MULTI_TRANSACTION" else [],
-            )
+        and (not outcome_filter or outcome_filter.upper() == "FAILED")
+        and (
+            not scope or item.scope == scope.upper().replace("-", "_")
         )
+    ]
+    return filtered[offset:offset + limit], len(filtered)
 
-    return all_items[offset:offset + limit], len(all_items)
+
+def warm_failures_cache() -> None:
+    """Best-effort background warm of the dataset scan (production).
+
+    Called once at application startup on PostgreSQL so the first /failures
+    page load is instant instead of paying the full deterministic scan.
+    Never raises — a cold cache simply recomputes on first request.
+    """
+    try:
+        from app.core.database import get_session_factory
+
+        session = get_session_factory()()
+        try:
+            if session.get_bind().dialect.name != "postgresql":
+                return
+            _cached_dataset_items(
+                session.get_bind(), _marker_ordered_instances(session)
+            )
+        finally:
+            session.close()
+    except Exception:  # noqa: BLE001 - warm-up must never break startup
+        pass

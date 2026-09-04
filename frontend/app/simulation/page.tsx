@@ -116,7 +116,7 @@ export default function SimulationPage() {
     return [...groups.entries()].sort(([a], [b]) => a.localeCompare(b));
   }, [transactions]);
 
-  if (listError || transactions === null) {
+  if (listError) {
     return (
       <div className="mx-auto flex max-w-7xl flex-col gap-4">
         <PageHeader
@@ -126,11 +126,29 @@ export default function SimulationPage() {
         <Card size="sm">
           <ErrorState
             title="Backend unavailable"
-            description={
-              listError ??
-              "Loading the transaction list… start the backend and seed the database, then try again."
-            }
+            description={listError}
           />
+        </Card>
+      </div>
+    );
+  }
+
+  if (transactions === null) {
+    // First paint before the transaction list resolves: show a loading
+    // state — never a false "Backend unavailable" while the request is
+    // still in flight.
+    return (
+      <div className="mx-auto flex max-w-7xl flex-col gap-4">
+        <PageHeader
+          title="Simulation Lab"
+          subtitle="Compare possible interventions against already-analyzed transactions."
+        />
+        <Card size="sm">
+          <CardContent>
+            <p className="text-xs text-muted-foreground">
+              Loading the transaction list…
+            </p>
+          </CardContent>
         </Card>
       </div>
     );

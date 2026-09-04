@@ -32,7 +32,16 @@ export const API_BASE_URL: string = (
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"
 ).replace(/\/+$/, "");
 
-export const API_REQUEST_TIMEOUT_MS = 5000;
+/**
+ * Per-request timeout. The deterministic backend engines recompute the
+ * full pipeline per transaction and take several seconds warm (impact /
+ * simulations / decisions routinely run 8-10s; a cold database wake adds
+ * more), so a short timeout made transaction details, the Simulation Lab
+ * and the failures page fail with "backend unreachable" even when the
+ * backend was healthy. 30s keeps real requests working while still
+ * failing fast (instead of hanging forever) when the backend is down.
+ */
+export const API_REQUEST_TIMEOUT_MS = 30_000;
 
 /** Error raised for any failed backend call (timeout, network, HTTP status). */
 export class ApiError extends Error {
