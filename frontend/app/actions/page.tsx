@@ -40,8 +40,9 @@ export default function ActionsPage() {
         <CardHeader>
           <CardTitle className="text-sm">Action Queue</CardTitle>
           <CardDescription className="text-xs">
-            Placeholder — recommendations arrive from the Decision Agent in
-            later parts
+            Sample queue for the review workflow — live recommendations from
+            the Decision Agent, with Approve / Reject, appear on each
+            transaction&apos;s detail page
           </CardDescription>
           <CardAction>
             <ListChecks className="size-4 text-muted-foreground" aria-hidden />

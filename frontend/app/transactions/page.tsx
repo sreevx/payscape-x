@@ -1,7 +1,6 @@
 import { ApiError, getTransactions } from "@/lib/api-client";
 import { TransactionsTable } from "@/components/transactions/transactions-table";
 import { PageHeader } from "@/components/shared/page-header";
-import { DemoTag } from "@/components/shared/demo-tag";
 import { ErrorState } from "@/components/shared/states";
 import { Card } from "@/components/ui/card";
 
@@ -28,7 +27,7 @@ export default async function TransactionsPage() {
         <PageHeader
           title="Transactions"
           subtitle="Every payment flowing through the platform and its current business outcome."
-          actions={<DemoTag label="SYNTHETIC DATA" />}
+
         />
         <Card size="sm">
           <ErrorState title="Backend unavailable" description={unavailable} />
@@ -42,7 +41,6 @@ export default async function TransactionsPage() {
       <PageHeader
         title="Transactions"
         subtitle="Every payment flowing through the platform and its current business outcome."
-        actions={<DemoTag label="SYNTHETIC DATA" />}
       />
       <TransactionsTable
         transactions={data.items}

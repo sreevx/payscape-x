@@ -38,7 +38,6 @@ import {
 } from "@/lib/journey-summary";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { DemoTag } from "@/components/shared/demo-tag";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { PipelineStrip } from "@/components/shared/pipeline-strip";
 import { ErrorState } from "@/components/shared/states";
@@ -237,7 +236,6 @@ export default async function TransactionDetailPage({
             {detail.merchant_name}
           </p>
         </div>
-        <DemoTag label="SYNTHETIC DATA" />
       </div>
 
       {/* Pipeline narrative — the PAYSCAPE-X analysis story at a glance */}

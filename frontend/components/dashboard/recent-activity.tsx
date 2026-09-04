@@ -80,7 +80,8 @@ export function RecentActivity() {
         </ol>
         <div className="mt-3 border-t px-(--card-spacing) pt-2 text-[11px] text-muted-foreground">
           <FlaskConical className="mr-1 inline size-3 align-[-1px]" aria-hidden />
-          Activity is placeholder data until the event pipeline goes live.
+          Sample activity feed — illustrative. The live event stream is in
+          Event Explorer.
         </div>
       </CardContent>
     </Card>

@@ -46,8 +46,8 @@ export default function SettingsPage() {
               <div>
                 <p className="text-xs font-medium text-foreground">Demo Mode</p>
                 <p className="text-[11px] text-muted-foreground">
-                  Synthetic data layer — disabled automatically once the real
-                  event pipeline is connected
+                  Synthetic data layer — OFF in production; the UI reads the
+                  backend&apos;s deterministic seeded dataset
                 </p>
               </div>
               <StatusBadge tone={DEMO_MODE ? "warning" : "neutral"}>
@@ -104,14 +104,11 @@ export default function SettingsPage() {
         </CardHeader>
         <CardContent className="space-y-2 text-xs text-muted-foreground">
           <p>
-            All dashboard KPIs, transactions, investigations, failure patterns
-            and events are seeded from a dedicated mock data layer
-            (<code className="rounded bg-muted px-1 py-0.5 font-mono text-[11px]">frontend/lib/demo-data.ts</code>).
-            No business logic lives inside components (Rule 8).
-          </p>
-          <p>
-            In later parts this layer is replaced by structured events from the
-            backend synthetic pipeline.
+            Transactions, outcomes, failure patterns, simulations and the event
+            stream come from the backend&apos;s deterministic pipeline over the
+            seeded NovaCart dataset (150 journeys · 2,170 events). A few
+            illustrative values (dashboard KPIs and the sample Action Center
+            queue) remain hand-written samples.
           </p>
         </CardContent>
       </Card>
@@ -140,8 +137,9 @@ export default function SettingsPage() {
           </div>
           <Separator className="my-3" />
           <p className="text-[11px] text-muted-foreground">
-            Role-based access, approval flows and audit trails arrive with the
-            Decision Agent and Human Approval modules.
+            Human approval (Approve / Reject) is recorded per decision on the
+            transaction detail page. Role-based access and audit trails arrive
+            with the operator workspace.
           </p>
         </CardContent>
       </Card>

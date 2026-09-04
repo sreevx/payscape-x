@@ -1,9 +1,13 @@
 /**
- * PAYSCAPE-X demo data layer (mock / seed).
+ * PAYSCAPE-X demo data layer.
  *
- * All synthetic values shown in the UI while the real engines do not exist
- * yet live here — never in components or business logic. Later parts will
- * replace this module with data from the backend / synthetic event pipeline.
+ * A few illustrative widgets (dashboard KPIs, the sample Action Center
+ * queue, sample notifications) still draw values from this module. Real
+ * product data — transactions, outcomes, failure patterns, simulations and
+ * the event stream — comes from the backend API. ACTIVE_INVESTIGATIONS
+ * references real seeded transactions (deterministic seed 42) so every
+ * investigation entry opens the live pipeline on the transaction detail
+ * page.
  *
  * Timestamps are relative to DEMO_NOW so the UI stays deterministic.
  */
@@ -16,7 +20,6 @@ import type {
   DemoTransaction,
   EventExplorerRow,
   FailurePattern,
-  InvestigationCase,
   KpiSummary,
   OutcomeSlice,
   SimulationPreset,
@@ -250,76 +253,16 @@ export function getTransactionDetail(id: string): TransactionDetail | undefined 
 /* Active investigations                                               */
 /* ------------------------------------------------------------------ */
 
+// Real seeded transactions with detected failures (deterministic seed 42,
+// verified against the live backend). Each row opens the live investigation
+// artifact — the full deterministic pipeline on the transaction page.
 export const ACTIVE_INVESTIGATIONS: ActiveInvestigation[] = [
-  { id: "inv_8d41", transactionId: "payx_7a1d8e2f", amount: "8999.00", currency: "INR", paymentStatus: "succeeded", outcome: "AT_RISK", risk: "high", lastEvent: "inventory.out_of_stock", updatedAt: "2026-09-03T09:04:00Z" },
-  { id: "inv_6b27", transactionId: "payx_8d4f6c0b", amount: "149.00", currency: "USD", paymentStatus: "succeeded", outcome: "FAILED", risk: "critical", lastEvent: "delivery.failed", updatedAt: "2026-09-03T08:10:00Z" },
-  { id: "inv_1c75", transactionId: "payx_5f8b1d7a", amount: "249.00", currency: "USD", paymentStatus: "pending", outcome: "UNVERIFIABLE", risk: "medium", lastEvent: "payment.pending", updatedAt: "2026-09-03T09:48:00Z" },
-  { id: "inv_9e04", transactionId: "payx_7b3e9c5d", amount: "2999.00", currency: "INR", paymentStatus: "succeeded", outcome: "AT_RISK", risk: "medium", lastEvent: "fulfillment.shipped", updatedAt: "2026-09-03T08:33:00Z" },
-  { id: "inv_3f92", transactionId: "payx_4a8f2c7e", amount: "1199.00", currency: "INR", paymentStatus: "succeeded", outcome: "AT_RISK", risk: "high", lastEvent: "inventory.out_of_stock", updatedAt: "2026-09-03T09:12:00Z" },
+  { id: "inv_compound", transactionId: "a80fd436-7c48-527b-b36b-16f3e52992ed", amount: "4545.00", currency: "INR", paymentStatus: "succeeded", outcome: "FAILED", risk: "critical", lastEvent: "CUSTOMER_COMPLAINT", updatedAt: "2026-09-04T21:28:00Z" },
+  { id: "inv_inventory", transactionId: "cb200bee-8610-5ec6-954c-5c62eb78c059", amount: "3998.00", currency: "INR", paymentStatus: "succeeded", outcome: "FAILED", risk: "high", lastEvent: "NO_FULFILLMENT", updatedAt: "2026-09-01T01:28:00Z" },
+  { id: "inv_delivery", transactionId: "cf1b7910-4070-5ce0-9dce-d78ba304371b", amount: "2497.00", currency: "INR", paymentStatus: "succeeded", outcome: "FAILED", risk: "high", lastEvent: "CUSTOMER_MESSAGE_RECEIVED", updatedAt: "2026-09-03T14:18:00Z" },
 ];
 
-/* ------------------------------------------------------------------ */
-/* Investigation case details                                          */
-/* ------------------------------------------------------------------ */
 
-export const INVESTIGATION_CASES: InvestigationCase[] = [
-  {
-    id: "inv_6b27",
-    transactionId: "payx_8d4f6c0b",
-    title: "Delivery failed after successful capture — outcome FAILED",
-    openedAt: "2026-09-02T14:20:00Z",
-    updatedAt: "2026-09-03T08:10:00Z",
-    priority: "high",
-    stage: "Outcome review",
-    owner: "Operations Analyst",
-    summary:
-      "Payment of $149.00 was captured successfully, but the shipment was reported lost in transit. The intended outcome (service activation) was never delivered. Refund flow initiated; provider confirmation pending.",
-    evidence: [
-      "payment.succeeded — stripe webhook — 2026-09-02T09:32",
-      "fulfillment.shipped — fulfillment service — 2026-09-02T10:02",
-      "delivery.failed — delivery partner — 2026-09-03T07:40",
-      "No delivery.delivered event within SLA window",
-    ],
-  },
-  {
-    id: "inv_8d41",
-    transactionId: "payx_7a1d8e2f",
-    title: "Stock shortfall after capture — outcome AT RISK",
-    openedAt: "2026-09-03T07:48:00Z",
-    updatedAt: "2026-09-03T09:04:00Z",
-    priority: "high",
-    stage: "Consistency check",
-    owner: "Operations Analyst",
-    summary:
-      "Payment of ₹8,999.00 was captured, but inventory reported out of stock at allocation time. Two line items cannot be fulfilled until restock. Outcome cannot be confirmed while the order is queued.",
-    evidence: [
-      "payment.succeeded — razorpay webhook — 2026-09-03T06:46",
-      "inventory.out_of_stock — inventory service — 2026-09-03T08:04",
-      "Restock ETA: 48h (supplier PO raised)",
-    ],
-  },
-  {
-    id: "inv_1c75",
-    transactionId: "payx_5f8b1d7a",
-    title: "Payment pending — insufficient evidence for outcome",
-    openedAt: "2026-09-03T09:50:00Z",
-    updatedAt: "2026-09-03T09:48:00Z",
-    priority: "medium",
-    stage: "Evidence gathering",
-    owner: "Operations Analyst",
-    summary:
-      "Payment remains pending with no settlement event. Outcome is UNVERIFIABLE until the payment state resolves. Monitoring the provider settlement webhook.",
-    evidence: [
-      "order.created — orders service — 2026-09-03T09:02",
-      "payment.pending — stripe webhook — 2026-09-03T09:04",
-      "No settlement event within 44 minutes",
-    ],
-  },
-];
-
-export function getInvestigationCase(id: string): InvestigationCase | undefined {
-  return INVESTIGATION_CASES.find((case_) => case_.id === id);
-}
 
 /* ------------------------------------------------------------------ */
 /* Failure patterns                                                    */
@@ -373,11 +316,11 @@ export const FAILURE_PATTERNS: FailurePattern[] = [
 /* ------------------------------------------------------------------ */
 
 export const RECENT_ACTIVITY: ActivityItem[] = [
-  { id: "act_01", kind: "investigation", message: "Investigation inv_6b27 opened for payx_8d4f6c0b — delivery failure after capture", timestamp: "2026-09-03T09:12:00Z", transactionId: "payx_8d4f6c0b" },
+  { id: "act_01", kind: "investigation", message: "Investigation opened for ORD-2026-1145 — compound failure spanning payment, inventory and delivery stages", timestamp: "2026-09-04T22:00:00Z", transactionId: "a80fd436-7c48-527b-b36b-16f3e52992ed" },
   { id: "act_02", kind: "event", message: "5,240 structured events ingested in the last hour across 4 providers", timestamp: "2026-09-03T09:00:00Z" },
   { id: "act_03", kind: "pattern", message: "Failure pattern “Paid, Not Fulfilled” crossed its alert threshold", timestamp: "2026-09-03T08:40:00Z" },
-  { id: "act_04", kind: "outcome", message: "Outcome FAILED assigned to payx_0c7e5b8d — refund initiated", timestamp: "2026-09-03T08:15:00Z", transactionId: "payx_0c7e5b8d" },
-  { id: "act_05", kind: "refund", message: "Refund confirmed for payx_0c7e5b8d (₹4,599.00)", timestamp: "2026-09-03T07:55:00Z", transactionId: "payx_0c7e5b8d" },
+  { id: "act_04", kind: "outcome", message: "Outcome FAILED assigned to ORD-2026-1132 — refund initiated", timestamp: "2026-09-02T11:30:00Z", transactionId: "1485c755-f2e6-5d19-a845-02ba7d623751" },
+  { id: "act_05", kind: "refund", message: "Refund confirmed for ORD-2026-1132 (₹6,194.00)", timestamp: "2026-09-02T12:05:00Z", transactionId: "1485c755-f2e6-5d19-a845-02ba7d623751" },
   { id: "act_06", kind: "alert", message: "Delivery partner reported SLA breach on 3 in-transit shipments", timestamp: "2026-09-03T07:30:00Z" },
 ];
 

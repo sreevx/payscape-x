@@ -67,7 +67,8 @@ export function OutcomeDistribution() {
 
         <p className="flex items-center gap-1.5 border-t pt-3 text-[11px] text-muted-foreground">
           <BarChart3 className="size-3.5 shrink-0" aria-hidden />
-          Chart placeholder — will be driven by the Outcome Engine in later parts.
+          Sample distribution — illustrative. Live per-journey outcomes are on
+          each transaction page.
         </p>
       </CardContent>
     </Card>

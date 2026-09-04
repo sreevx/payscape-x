@@ -18,7 +18,6 @@ import {
 } from "@/components/ui/table";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/components/shared/page-header";
-import { DemoTag } from "@/components/shared/demo-tag";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { EmptyState, ErrorState, LoadingState } from "@/components/shared/states";
 
@@ -90,7 +89,6 @@ export default function EventsPage() {
       <PageHeader
         title="Event Explorer"
         subtitle="Raw structured event stream — the single source of truth every PAYSCAPE-X module consumes."
-        actions={<DemoTag label="SYNTHETIC DATA" />}
       />
 
       {/* Filters */}
@@ -342,9 +340,9 @@ export default function EventsPage() {
       </div>
 
       <p className="text-[11px] text-muted-foreground">
-        Structured events are the contract for every future module: each event
-        carries type, source, timestamp, correlation and payload. Journey
-        reconstruction and replay arrive with the ingestion pipeline.
+        Structured events are the contract every module consumes: each event
+        carries type, source, timestamp, correlation and payload — the same
+        stream behind journey reconstruction and outcome analysis.
       </p>
     </div>
   );

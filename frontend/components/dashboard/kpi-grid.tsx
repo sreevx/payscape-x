@@ -10,8 +10,8 @@ export function KpiGrid() {
         ))}
       </div>
       <p className="text-[10px] text-muted-foreground">
-        Outcome metrics are DEMO / PRE-INTELLIGENCE estimates — they will be
-        computed from real journey evidence once the Outcome Engine exists.
+        Sample KPIs — illustrative. Per-journey evidence, consistency and
+        outcomes are computed by the live engines on each transaction page.
       </p>
     </div>
   );
