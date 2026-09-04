@@ -6,7 +6,6 @@ import { PageHeader } from "@/components/shared/page-header";
 import { DemoTag } from "@/components/shared/demo-tag";
 import { EmptyState, ErrorState } from "@/components/shared/states";
 import { StatCard } from "@/components/shared/stat-card";
-import { KPI_SUMMARY } from "@/lib/demo-data";
 
 describe("shared components render", () => {
   it("renders a StatusBadge with its tone and label", () => {
@@ -47,12 +46,23 @@ describe("shared components render", () => {
     expect(screen.queryByText(/at .*\.tsx:\d+/)).not.toBeInTheDocument();
   });
 
-  it("renders a KPI stat card from demo data", () => {
-    const kpi = KPI_SUMMARY.find((item) => item.id === "kpi_payment_success");
-    if (!kpi) throw new Error("demo KPI missing");
-    render(<StatCard kpi={kpi} />);
-    expect(screen.getByText("Payment Success")).toBeInTheDocument();
-    expect(screen.getByText("98.4%")).toBeInTheDocument();
-    expect(screen.getAllByText("DEMO DATA").length).toBeGreaterThan(0);
+  it("renders a KPI stat card with a real value and no demo tag", () => {
+    // Scope assertions to this card's container: other tests in this file
+    // render DemoTag, so document-wide queries would see their output.
+    const { container } = render(
+      <StatCard
+        kpi={{
+          id: "kpi_payment_success",
+          label: "Payment Success",
+          value: "86.7%",
+          tone: "info",
+          description: "130 of 150 payments captured",
+        }}
+      />
+    );
+    expect(container.textContent).toContain("Payment Success");
+    expect(container.textContent).toContain("86.7%");
+    expect(container.textContent).toContain("130 of 150 payments captured");
+    expect(container.textContent).not.toContain("DEMO DATA");
   });
 });

@@ -45,14 +45,20 @@ def create_app() -> FastAPI:
     app.include_router(health_router)
 
     # Production warm-up: pre-compute the deterministic compound-failure
-    # dataset scan in the background so the first /failures page load is
-    # fast. Best-effort — a cold cache simply recomputes on first request.
+    # dataset scan and the dashboard summary in the background so the first
+    # /failures and /api/v1/summary requests are fast. Best-effort — a cold
+    # cache simply recomputes on the first request.
     if settings.app_env == "production":
-        from app.services import failures_service
+        from app.services import failures_service, summary_service
 
         threading.Thread(
             target=failures_service.warm_failures_cache,
             name="failures-cache-warm",
+            daemon=True,
+        ).start()
+        threading.Thread(
+            target=summary_service.warm_summary_cache,
+            name="summary-cache-warm",
             daemon=True,
         ).start()
 

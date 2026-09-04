@@ -1,9 +1,12 @@
 /**
  * Demo-mode and UI-facing types.
  *
- * These types describe the synthetic data layer used while the real
- * engines (Outcome, Consistency, Simulation) do not exist yet. They are
- * intentionally separate from the shared domain types in `./index.ts`.
+ * These types describe the handful of illustrative widgets (sample action
+ * queue, notifications, activity/pattern cards) that still draw values
+ * from `./lib/demo-data.ts`. Real product data — transactions, outcomes,
+ * failure patterns, simulations, events and the dashboard summary — comes
+ * from the backend API. They are intentionally separate from the shared
+ * domain types in `./index.ts`.
  */
 
 import type { Currency, PaymentStatus } from "./index";
@@ -20,16 +23,10 @@ export interface KpiSummary {
   id: string;
   label: string;
   value: string;
-  delta: string;
+  /** Optional trend/context line under the card — real KPIs omit it. */
+  delta?: string;
   tone: Tone;
   description: string;
-}
-
-export interface OutcomeSlice {
-  label: BusinessOutcome;
-  value: number;
-  tone: Tone;
-  note?: string;
 }
 
 export interface DemoTransaction {

@@ -21,6 +21,7 @@ import type {
   ApiOutcome,
   ApiScenarioDetail,
   ApiScenarioSummary,
+  ApiSummary,
   ApiSimulationReport,
   ApiSimulationResult,
   ApiTransactionDetail,
@@ -134,6 +135,11 @@ export function getEvents(query: EventsQuery = {}): Promise<ApiEventStreamRespon
   if (query.correlationId) params.set("correlation_id", query.correlationId);
   const qs = params.toString();
   return request<ApiEventStreamResponse>(`/api/v1/events${qs ? `?${qs}` : ""}`);
+}
+
+/** GET /api/v1/summary — real dashboard aggregates (deterministic). */
+export function getSummary(): Promise<ApiSummary> {
+  return request<ApiSummary>("/api/v1/summary");
 }
 
 /** GET /api/v1/scenarios — every synthetic scenario with counts. */

@@ -23,6 +23,7 @@ from app.api.routes.journeys import router as journeys_router
 from app.api.routes.outcome import router as outcome_router
 from app.api.routes.scenarios import router as scenarios_router
 from app.api.routes.simulations import router as simulations_router
+from app.api.routes.summary import router as summary_router
 from app.api.routes.transactions import router as transactions_router
 from app.api.routes.webhooks import router as webhooks_router
 
@@ -39,5 +40,6 @@ api_router.include_router(outcome_router)
 api_router.include_router(failures_router)
 api_router.include_router(impact_router)
 api_router.include_router(simulations_router)
+api_router.include_router(summary_router)
 api_router.include_router(decisions_router)
 api_router.include_router(webhooks_router)

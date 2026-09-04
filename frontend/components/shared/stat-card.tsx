@@ -1,7 +1,6 @@
 import type { KpiSummary } from "@/types/demo";
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { DemoTag } from "@/components/shared/demo-tag";
 
 const TONE_ACCENT: Record<KpiSummary["tone"], string> = {
   success: "bg-emerald-500",
@@ -15,12 +14,9 @@ export function StatCard({ kpi }: { kpi: KpiSummary }) {
   return (
     <Card size="sm" className="gap-2">
       <CardHeader className="gap-0">
-        <div className="flex items-center justify-between gap-2">
-          <CardTitle className="text-sm font-medium text-muted-foreground">
-            {kpi.label}
-          </CardTitle>
-          <DemoTag />
-        </div>
+        <CardTitle className="text-sm font-medium text-muted-foreground">
+          {kpi.label}
+        </CardTitle>
         <CardDescription className="text-xs">{kpi.description}</CardDescription>
       </CardHeader>
       <CardContent className="flex items-baseline gap-2 pt-0">
@@ -35,9 +31,11 @@ export function StatCard({ kpi }: { kpi: KpiSummary }) {
           {kpi.value}
         </span>
       </CardContent>
-      <div className="px-(--card-spacing) pb-(--card-spacing) text-xs text-muted-foreground">
-        {kpi.delta}
-      </div>
+      {kpi.delta ? (
+        <div className="px-(--card-spacing) pb-(--card-spacing) text-xs text-muted-foreground">
+          {kpi.delta}
+        </div>
+      ) : null}
     </Card>
   );
 }

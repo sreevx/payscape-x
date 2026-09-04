@@ -18,6 +18,7 @@ import {
   getOutcome,
   getSimulationCompare,
   getSimulations,
+  getSummary,
   getTransactions,
   rejectDecision,
   runSimulation,
@@ -273,6 +274,37 @@ describe("getEvidence / getConsistency", () => {
     mockFetchResponse({ detail: "Transaction not found" }, false, 404);
     await expect(getEvidence(id)).rejects.toMatchObject({ status: 404 });
     await expect(getConsistency(id)).rejects.toMatchObject({ status: 404 });
+  });
+});
+
+describe("getSummary", () => {
+  it("calls GET /api/v1/summary and returns the parsed payload", async () => {
+    const body = {
+      total_transactions: 150,
+      payment_success_count: 130,
+      payment_failed_count: 20,
+      payment_pending_count: 0,
+      payment_success_rate: 86.7,
+      payment_failed_rate: 13.3,
+      outcomes: { fulfilled: 90, at_risk: 0, failed: 50, unverifiable: 10 },
+      fulfilled_rate: 60.0,
+      at_risk_rate: 0.0,
+      failed_rate: 33.3,
+      unverifiable_rate: 6.7,
+      source: "Deterministic outcome engine (Part 5)",
+      computed_at: "2026-09-04T00:00:00Z",
+    };
+    mockFetchResponse(body, true, 200);
+
+    await expect(getSummary()).resolves.toEqual(body);
+
+    const [url] = vi.mocked(fetch).mock.calls[0];
+    expect(url).toBe(`${API_BASE_URL}/api/v1/summary`);
+  });
+
+  it("rejects with ApiError when the summary responds with a non-2xx", async () => {
+    mockFetchResponse({ detail: "boom" }, false, 503);
+    await expect(getSummary()).rejects.toMatchObject({ status: 503 });
   });
 });
 

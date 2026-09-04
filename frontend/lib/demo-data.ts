@@ -1,13 +1,14 @@
 /**
  * PAYSCAPE-X demo data layer.
  *
- * A few illustrative widgets (dashboard KPIs, the sample Action Center
- * queue, sample notifications) still draw values from this module. Real
- * product data — transactions, outcomes, failure patterns, simulations and
- * the event stream — comes from the backend API. ACTIVE_INVESTIGATIONS
- * references real seeded transactions (deterministic seed 42) so every
- * investigation entry opens the live pipeline on the transaction detail
- * page.
+ * A few illustrative widgets (the sample Action Center queue, sample
+ * notifications, the sample failure-pattern and activity cards, the demo
+ * user) still draw values from this module. Real product data —
+ * transactions, outcomes, failure patterns, simulations, the event stream
+ * and the dashboard summary — comes from the backend API.
+ * ACTIVE_INVESTIGATIONS references real seeded transactions
+ * (deterministic seed 42) so every investigation entry opens the live
+ * pipeline on the transaction detail page.
  *
  * Timestamps are relative to DEMO_NOW so the UI stays deterministic.
  */
@@ -20,64 +21,12 @@ import type {
   DemoTransaction,
   EventExplorerRow,
   FailurePattern,
-  KpiSummary,
-  OutcomeSlice,
   SimulationPreset,
   TransactionDetail,
   TransactionEventRow,
 } from "@/types/demo";
 
 export const DEMO_NOW = "2026-09-03T10:30:00Z";
-
-/* ------------------------------------------------------------------ */
-/* KPI summary                                                         */
-/* ------------------------------------------------------------------ */
-
-export const KPI_SUMMARY: KpiSummary[] = [
-  {
-    id: "kpi_payment_success",
-    label: "Payment Success",
-    value: "98.4%",
-    delta: "+0.3 pts vs last week",
-    tone: "info",
-    description: "Share of payment attempts that succeeded",
-  },
-  {
-    id: "kpi_outcome_success",
-    label: "Business Outcome Success",
-    value: "94.1%",
-    delta: "-0.6 pts vs last week",
-    tone: "success",
-    description: "Successful payments that reached the intended outcome",
-  },
-  {
-    id: "kpi_at_risk",
-    label: "At Risk",
-    value: "3.7%",
-    delta: "+0.4 pts vs last week",
-    tone: "warning",
-    description: "Payments captured but the outcome is in doubt",
-  },
-  {
-    id: "kpi_failed_outcomes",
-    label: "Failed Outcomes",
-    value: "2.2%",
-    delta: "-0.1 pts vs last week",
-    tone: "danger",
-    description: "Captured payments that did not achieve the outcome",
-  },
-];
-
-/* ------------------------------------------------------------------ */
-/* Outcome distribution (chart placeholder)                            */
-/* ------------------------------------------------------------------ */
-
-export const OUTCOME_DISTRIBUTION: OutcomeSlice[] = [
-  { label: "FULFILLED", value: 94.1, tone: "success", note: "Outcome verified across all stages" },
-  { label: "AT_RISK", value: 3.7, tone: "warning", note: "Outcome not yet confirmed" },
-  { label: "FAILED", value: 2.2, tone: "danger", note: "Outcome definitively not achieved" },
-  { label: "UNVERIFIABLE", value: 0.0, tone: "neutral", note: "Insufficient event evidence" },
-];
 
 /* ------------------------------------------------------------------ */
 /* Transactions (enriched demo rows)                                   */

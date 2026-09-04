@@ -670,6 +670,37 @@ export interface ApiDecision {
   metadata: Record<string, unknown>;
 }
 
+/** Deterministic outcome buckets for the dashboard summary (Phase B). */
+export interface ApiSummaryOutcomeCounts {
+  fulfilled: number;
+  at_risk: number;
+  failed: number;
+  unverifiable: number;
+}
+
+/**
+ * Real dashboard aggregates — GET /api/v1/summary. Counts are computed by
+ * the existing deterministic Part 5 outcome engine over every seeded
+ * journey (never a second outcome calculation); payment lifecycle counts
+ * come straight from the payments table. Rates are 1-dp percentages of
+ * total_transactions.
+ */
+export interface ApiSummary {
+  total_transactions: number;
+  payment_success_count: number;
+  payment_failed_count: number;
+  payment_pending_count: number;
+  payment_success_rate: number;
+  payment_failed_rate: number;
+  outcomes: ApiSummaryOutcomeCounts;
+  fulfilled_rate: number;
+  at_risk_rate: number;
+  failed_rate: number;
+  unverifiable_rate: number;
+  source: string;
+  computed_at: string;
+}
+
 /** Event sources used by the unified stream (mirror backend EventSource). */
 export const API_EVENT_SOURCES = [
   "PAYMENT_PROVIDER",
