@@ -6,6 +6,7 @@ import {
   approveDecision,
   getCompoundFailure,
   getConsistency,
+  getDecisions,
   getDecision,
   getEvents,
   getEvidence,
@@ -640,6 +641,40 @@ describe("getDecision / approveDecision / rejectDecision", () => {
     mockFetchResponse({ detail: "Decision is already APPROVED" }, false, 409);
     await expect(approveDecision(decisionId)).rejects.toMatchObject({ status: 409 });
     await expect(rejectDecision(decisionId, "x")).rejects.toMatchObject({ status: 409 });
+  });
+});
+
+describe("getDecisions", () => {
+  it("calls GET /api/v1/decisions and returns the recorded queue", async () => {
+    const body = {
+      items: [
+        {
+          decision_id: "dec-1",
+          transaction_id: "tx-1",
+          external_order_id: "ORD-2026-1145",
+          amount: "4545.00",
+          currency: "INR",
+          payment_status: "CAPTURED",
+          outcome: "FAILED",
+          decision_source: "DETERMINISTIC_FALLBACK",
+          recommended_action: "REFUND_OR_CONTAIN",
+          reason: "Customer impact recorded after a successful capture.",
+          decision_confidence: 0.9,
+          evidence_confidence: 0.95,
+          approval_status: "PENDING",
+          human_approval_required: true,
+          created_at: "2026-09-04T10:43:26",
+          updated_at: "2026-09-04T10:43:26",
+        },
+      ],
+      total: 1,
+    };
+    mockFetchResponse(body, true, 200);
+
+    await expect(getDecisions()).resolves.toEqual(body);
+
+    const [url] = vi.mocked(fetch).mock.calls[0];
+    expect(url).toBe(`${API_BASE_URL}/api/v1/decisions`);
   });
 });
 

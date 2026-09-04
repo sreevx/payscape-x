@@ -670,6 +670,37 @@ export interface ApiDecision {
   metadata: Record<string, unknown>;
 }
 
+/** One row of the real Action Center queue (Part 8). */
+export interface ApiDecisionListItem {
+  decision_id: string;
+  transaction_id: string;
+  /** Human order reference, e.g. ORD-2026-1145. */
+  external_order_id: string;
+  amount: string;
+  currency: string;
+  payment_status: ApiPaymentStatus;
+  /** Business outcome recorded at decision time (deterministic Part 5). */
+  outcome: string | null;
+  /** LLM | DETERMINISTIC_FALLBACK */
+  decision_source: string;
+  /** DO_NOTHING | RECOVER_ROOT_CAUSE | REFUND_OR_CONTAIN | HUMAN_REVIEW */
+  recommended_action: string;
+  reason: string;
+  decision_confidence: number;
+  evidence_confidence: number;
+  /** PENDING | APPROVED | REJECTED */
+  approval_status: string;
+  human_approval_required: boolean;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+/** GET /api/v1/decisions — recorded decisions, newest first. */
+export interface ApiDecisionListResponse {
+  items: ApiDecisionListItem[];
+  total: number;
+}
+
 /** Deterministic outcome buckets for the dashboard summary (Phase B). */
 export interface ApiSummaryOutcomeCounts {
   fulfilled: number;

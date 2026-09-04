@@ -21,7 +21,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.enums import (
@@ -35,9 +35,10 @@ from app.decision.engine import (
 )
 from app.decision.llm import DecisionLLMProvider
 from app.decision.models import APPROVAL_PENDING
-from app.models import Decision
+from app.models import Decision, Order, Payment
 from app.schemas.decision import (
     AlternativeActionItem,
+    DecisionListItem,
     DecisionResponse,
 )
 from app.services import simulation_service
@@ -147,6 +148,62 @@ def _upsert_decision(
     session.commit()
     session.refresh(row)
     return row
+
+
+def _list_item(row: Decision, payment: Payment, order: Order) -> DecisionListItem:
+    metadata = dict(row.metadata_ or {})
+    outcome = metadata.get("outcome")
+    return DecisionListItem(
+        decision_id=str(row.decision_id),
+        transaction_id=str(row.transaction_id),
+        external_order_id=order.external_order_id,
+        amount=str(payment.amount),
+        currency=payment.currency,
+        payment_status=payment.status.value
+        if hasattr(payment.status, "value") else str(payment.status),
+        outcome=str(outcome) if outcome is not None else None,
+        decision_source=row.decision_source.value
+        if hasattr(row.decision_source, "value") else str(row.decision_source),
+        recommended_action=row.recommended_action.value
+        if hasattr(row.recommended_action, "value") else str(row.recommended_action),
+        reason=row.reason,
+        decision_confidence=round(float(row.decision_confidence), 3),
+        evidence_confidence=round(float(row.evidence_confidence), 3),
+        approval_status=row.approval_status.value
+        if hasattr(row.approval_status, "value") else str(row.approval_status),
+        human_approval_required=bool(row.human_approval_required),
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
+
+
+def list_decisions(
+    session: Session,
+    limit: int = 100,
+    offset: int = 0,
+) -> tuple[list[DecisionListItem], int]:
+    """Read-only Action Center queue: every recorded decision, newest first.
+
+    Decisions are persisted idempotently each time a transaction is
+    opened for investigation (GET /decisions/{transaction_id}), so this is
+    the real auditable queue — no generation runs on read. Outcome comes
+    from the row metadata recorded at decision time.
+    """
+    total = session.scalar(
+        select(func.count(Decision.decision_id))
+    ) or 0
+    rows = session.execute(
+        select(Decision, Payment, Order)
+        .join(Payment, Payment.id == Decision.transaction_id)
+        .join(Order, Order.id == Payment.order_id)
+        .order_by(Decision.created_at.desc(), Decision.decision_id.desc())
+        .offset(offset)
+        .limit(limit)
+    ).all()
+    return [
+        _list_item(row, payment, order)
+        for row, payment, order in rows
+    ], int(total)
 
 
 def _response_schema(row: Decision) -> DecisionResponse:

@@ -116,16 +116,6 @@ export interface AppNotification {
   tone: Tone;
 }
 
-export interface ActionQueueItem {
-  id: string;
-  transactionId: string;
-  kind: string;
-  priority: RiskLevel;
-  status: "queued" | "in_review" | "needs_approval" | "completed";
-  assignedTo: string;
-  createdAt: string;
-}
-
 export interface EventExplorerRow {
   id: string;
   eventType: string;

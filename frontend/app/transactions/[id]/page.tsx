@@ -12,13 +12,8 @@ import {
 
 import {
   ApiError,
-  getCompoundFailure,
-  getConsistency,
+  getAnalysis,
   getDecision,
-  getEvidence,
-  getImpact,
-  getJourney,
-  getOutcome,
   getSimulations,
   getTransaction,
 } from "@/lib/api-client";
@@ -168,27 +163,22 @@ export default async function TransactionDetailPage({
   const { id } = await params;
 
   let detail;
-  let journey;
-  let evidence;
-  let consistency;
-  let outcome;
-  let failure;
-  let impact;
+  let analysis;
   let simulation;
   let decision;
   try {
-    [detail, journey, evidence, consistency, outcome, failure, impact, simulation, decision] =
-      await Promise.all([
-        getTransaction(id),
-        getJourney(id),
-        getEvidence(id),
-        getConsistency(id),
-        getOutcome(id),
-        getCompoundFailure(id),
-        getImpact(id),
-        getSimulations(id),
-        getDecision(id),
-      ]);
+    // Four parallel calls, not nine: /analysis/{id} returns the journey,
+    // evidence, consistency, outcome, compound-failure and impact sections
+    // from ONE deterministic pipeline reconstruction (the individual
+    // endpoints each reconstruct the journey from scratch — calling them
+    // all here made the backend do the same computation up to eight times
+    // per page view). Simulations and the decision add their own stages.
+    [detail, analysis, simulation, decision] = await Promise.all([
+      getTransaction(id),
+      getAnalysis(id),
+      getSimulations(id),
+      getDecision(id),
+    ]);
   } catch (error) {
     if (error instanceof ApiError && error.status === 404) {
       notFound();
@@ -204,6 +194,16 @@ export default async function TransactionDetailPage({
       </div>
     );
   }
+
+  // Sections are fed by the combined analysis payload; `analysis` is
+  // non-null whenever the request succeeded, so the guards below keep
+  // working unchanged.
+  const journey = analysis?.journey ?? null;
+  const evidence = analysis?.evidence ?? null;
+  const consistency = analysis?.consistency ?? null;
+  const outcome = analysis?.outcome ?? null;
+  const failure = analysis?.compound_failure ?? null;
+  const impact = analysis?.impact ?? null;
 
   const milestones = journeyMilestones(detail.events);
   const paymentTone = PAYMENT_STATUS_TONES[detail.payment_status] ?? "neutral";

@@ -1,5 +1,8 @@
 """AI Decision Agent endpoints (Part 8).
 
+GET  /api/v1/decisions                         — read-only Action Center
+                                                  queue (recorded decisions,
+                                                  newest first)
 GET  /api/v1/decisions/{transaction_id}           — generate (idempotently
                                                     persist) the auditable
                                                     decision
@@ -25,6 +28,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.schemas.decision import (
     ApproveDecisionRequest,
+    DecisionListResponse,
     DecisionResponse,
     RejectDecisionRequest,
 )
@@ -45,6 +49,22 @@ def _run(fn, *args, **kwargs):
                 "and `python -m app.seed` first."
             ),
         ) from exc
+
+
+@router.get("", response_model=DecisionListResponse)
+def list_decisions(
+    limit: int = 100,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+):
+    """Read-only queue of recorded decisions (real Action Center data)."""
+    items, total = _run(
+        decision_service.list_decisions,
+        db,
+        limit=max(1, min(limit, 200)),
+        offset=max(0, offset),
+    )
+    return DecisionListResponse(items=items, total=total)
 
 
 @router.get("/{transaction_id}", response_model=DecisionResponse)

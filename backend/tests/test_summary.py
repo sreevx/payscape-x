@@ -24,6 +24,9 @@ environment). Determinism and full-dataset completeness are asserted
 directly instead.
 """
 
+import threading
+import time
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, func, select
@@ -146,6 +149,100 @@ def test_summary_endpoint_returns_real_aggregates(summary_env):
     assert body["unverifiable_rate"] == 6.7
     assert "Deterministic outcome engine" in body["source"]
     assert body["computed_at"]
+
+
+# ---------------------------------------------------------------------------
+# Cache freshness semantics (PostgreSQL path)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _reset_summary_cache():
+    """Isolate the module-level TTL cache between cache-behaviour tests."""
+    summary_service._cache = {}
+    summary_service._scan_inflight = None
+    summary_service._refresh_inflight = False
+    yield
+    summary_service._cache = {}
+    summary_service._scan_inflight = None
+    summary_service._refresh_inflight = False
+
+
+def test_cached_outcomes_memoized_within_ttl(monkeypatch):
+    calls: list[int] = []
+
+    def fake_scan(bind, ordered_instances):
+        calls.append(1)
+        return ["FULFILLED"]
+
+    monkeypatch.setattr(summary_service, "_scan_parallel", fake_scan)
+    first = summary_service._cached_outcomes(object(), [])
+    second = summary_service._cached_outcomes(object(), [])
+    assert first == second == ["FULFILLED"]
+    # A fresh entry is served without re-running the scan.
+    assert len(calls) == 1
+
+
+def test_stale_outcomes_served_and_refreshed_in_background(monkeypatch):
+    monkeypatch.setattr(
+        summary_service, "_scan_parallel", lambda bind, ordered: ["FAILED"]
+    )
+    summary_service._cache = {
+        "outcomes": {
+            "at": time.monotonic() - summary_service._CACHE_TTL_SECONDS - 1,
+            "outcomes": ["FULFILLED"],
+        }
+    }
+    # An expired TTL never strands the request on the full scan: the stale
+    # deterministic payload is returned immediately...
+    value = summary_service._cached_outcomes(object(), [])
+    assert value == ["FULFILLED"]
+    # ...while one background thread recomputes and replaces the entry.
+    deadline = time.monotonic() + 5.0
+    refreshed = False
+    while time.monotonic() < deadline:
+        with summary_service._cache_lock:
+            entry = summary_service._cache.get("outcomes")
+            refreshed = (
+                entry is not None and entry["outcomes"] == ["FAILED"]
+            )
+        if refreshed:
+            break
+        time.sleep(0.02)
+    assert refreshed
+
+
+def test_cold_callers_join_inflight_scan_without_duplicating(monkeypatch):
+    def should_never_scan(bind, ordered_instances):
+        raise AssertionError("a joining caller must not start its own scan")
+
+    monkeypatch.setattr(summary_service, "_scan_parallel", should_never_scan)
+
+    # Simulate a scan already running (the startup warm-up).
+    inflight = threading.Event()
+    summary_service._scan_inflight = inflight
+
+    result: dict[str, object] = {}
+
+    def joiner():
+        result["value"] = summary_service._cached_outcomes(object(), [])
+
+    thread = threading.Thread(target=joiner)
+    thread.start()
+    time.sleep(0.1)  # let the joiner reach the wait
+    assert thread.is_alive()
+
+    # The running scan completes and stores its deterministic result.
+    with summary_service._cache_lock:
+        summary_service._cache = {
+            "outcomes": {"at": time.monotonic(), "outcomes": ["FAILED"]}
+        }
+        summary_service._scan_inflight = None
+    inflight.set()
+    thread.join(timeout=5.0)
+
+    assert result["value"] == ["FAILED"]
+    assert not thread.is_alive()
 
 
 def test_summary_scan_is_deterministic_and_complete(summary_env):

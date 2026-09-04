@@ -361,19 +361,104 @@ def _scan_parallel(
     return [item for item in results if item is not None]
 
 
+_list_refresh_inflight = False
+_list_scan_inflight: Optional[threading.Event] = None
+
+
+def _kick_off_refresh(
+    bind, ordered_instances: list[ScenarioInstance]
+) -> None:
+    """One background recompute at a time — callers never wait on expiry."""
+    global _list_refresh_inflight
+    with _list_cache_lock:
+        if _list_refresh_inflight:
+            return
+        _list_refresh_inflight = True
+
+    def refresh() -> None:
+        global _list_cache, _list_refresh_inflight  # noqa: PLW0603
+        try:
+            items = _scan_parallel(bind, ordered_instances)
+            with _list_cache_lock:
+                _list_cache = {
+                    "entry": {"at": time.monotonic(), "items": items}
+                }
+        finally:
+            with _list_cache_lock:
+                _list_refresh_inflight = False
+
+    threading.Thread(
+        target=refresh, name="failures-list-cache-refresh", daemon=True
+    ).start()
+
+
+def _compute_or_join(
+    bind, ordered_instances: list[ScenarioInstance]
+) -> list[FailureListItem]:
+    """Cold compute with single-flight semantics.
+
+    When the cache is empty (first request, or the startup warm-up is still
+    running) exactly one scan runs and concurrent callers join it instead
+    of duplicating the work and competing for database connections.
+    """
+    global _list_cache, _list_scan_inflight
+    while True:
+        with _list_cache_lock:
+            entry = _list_cache.get("entry")
+            if (
+                entry is not None
+                and time.monotonic() - entry["at"] < _LIST_CACHE_TTL_SECONDS
+            ):
+                return entry["items"]
+            event = _list_scan_inflight
+            if event is None:
+                event = threading.Event()
+                _list_scan_inflight = event
+                owner = True
+            else:
+                owner = False
+        if owner:
+            try:
+                items = _scan_parallel(bind, ordered_instances)
+                with _list_cache_lock:
+                    _list_cache = {
+                        "entry": {"at": time.monotonic(), "items": items}
+                    }
+            finally:
+                with _list_cache_lock:
+                    _list_scan_inflight = None
+                event.set()
+            return items
+        # Another scan (e.g. the startup warm-up) is already running — wait
+        # for it to store its result instead of scanning in parallel.
+        event.wait(timeout=120.0)
+
+
 def _cached_dataset_items(
     bind, ordered_instances: list[ScenarioInstance]
 ) -> list[FailureListItem]:
-    """Memoized full detected list (PostgreSQL path only)."""
+    """Memoized full detected list (PostgreSQL path only).
+
+    - fresh entry  -> served immediately;
+    - stale entry  -> served immediately (deterministic output is identical
+      on the frozen seeded dataset) while one background thread recomputes,
+      so a TTL expiry never strands a request on the multi-second scan;
+    - no entry     -> computed once; concurrent callers and the startup
+      warm-up join the in-flight scan rather than duplicating it.
+    """
     global _list_cache
     with _list_cache_lock:
         entry = _list_cache.get("entry")
-        if entry is not None and time.monotonic() - entry["at"] < _LIST_CACHE_TTL_SECONDS:
+        if (
+            entry is not None
+            and time.monotonic() - entry["at"] < _LIST_CACHE_TTL_SECONDS
+        ):
             return entry["items"]
-    items = _scan_parallel(bind, ordered_instances)
-    with _list_cache_lock:
-        _list_cache = {"entry": {"at": time.monotonic(), "items": items}}
-    return items
+        stale_items = entry["items"] if entry is not None else None
+    if stale_items is not None:
+        _kick_off_refresh(bind, ordered_instances)
+        return stale_items
+    return _compute_or_join(bind, ordered_instances)
 
 
 def _dataset_items(

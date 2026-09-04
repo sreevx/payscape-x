@@ -280,6 +280,136 @@ def test_decisions_are_read_only(client):
 
 
 # ---------------------------------------------------------------------------
+# Action Center list endpoint (read-only)
+# ---------------------------------------------------------------------------
+
+DECISION_LIST_ITEM_KEYS = {
+    "decision_id",
+    "transaction_id",
+    "external_order_id",
+    "amount",
+    "currency",
+    "payment_status",
+    "outcome",
+    "decision_source",
+    "recommended_action",
+    "reason",
+    "decision_confidence",
+    "evidence_confidence",
+    "approval_status",
+    "human_approval_required",
+    "created_at",
+    "updated_at",
+}
+
+
+def test_decision_list_shape_and_real_fields(client):
+    """GET /api/v1/decisions returns the recorded queue joined with real
+    payment/order context and the outcome recorded at decision time."""
+    transaction_id = _transaction_id(client, "delivery_failure", index=5)
+    decision = client.get(
+        f"/api/v1/decisions/{transaction_id}"
+    ).json()
+    body = client.get("/api/v1/decisions").json()
+    assert body["total"] >= 1
+    item = next(
+        item for item in body["items"]
+        if item["decision_id"] == decision["decision_id"]
+    )
+    assert set(item) == DECISION_LIST_ITEM_KEYS
+    assert item["transaction_id"] == transaction_id
+    assert item["decision_source"] == "DETERMINISTIC_FALLBACK"
+    assert item["approval_status"] == "PENDING"
+    assert item["outcome"] == "FAILED"
+    assert item["amount"]
+    assert item["currency"] == "INR"
+    assert item["external_order_id"].startswith("ORD-")
+    assert item["reason"]
+
+
+def test_decision_list_newest_first_matches_table_count(client):
+    """Queue is newest-first and totals the real decisions table."""
+    for slug, index in (("inventory_failure", 2), ("missing_event", 2)):
+        transaction_id = _transaction_id(client, slug, index=index)
+        assert client.get(
+            f"/api/v1/decisions/{transaction_id}"
+        ).status_code == 200
+    body = client.get("/api/v1/decisions?limit=200").json()
+    assert body["total"] == len(body["items"])
+    assert len(body["items"]) == body["total"] >= 3
+    stamps = [
+        (item["created_at"] or "", item["decision_id"])
+        for item in body["items"]
+    ]
+    assert stamps == sorted(stamps, reverse=True)
+    with client.factory() as session:  # type: ignore[attr-defined]
+        from sqlalchemy import func, select
+        from app.models import Decision
+        db_total = session.scalar(
+            select(func.count(Decision.decision_id))
+        )
+    assert body["total"] == db_total
+
+
+def test_decision_list_reflects_approval(client):
+    """The queue shows the real approval lifecycle."""
+    transaction_id = _transaction_id(client, "inventory_failure", index=4)
+    decision = client.get(
+        f"/api/v1/decisions/{transaction_id}"
+    ).json()
+    assert client.post(
+        f"/api/v1/decisions/{decision['decision_id']}/approve"
+    ).status_code == 200
+    body = client.get("/api/v1/decisions").json()
+    item = next(
+        item for item in body["items"]
+        if item["decision_id"] == decision["decision_id"]
+    )
+    assert item["approval_status"] == "APPROVED"
+
+
+# ---------------------------------------------------------------------------
+# Bounded LLM path — provider failure falls back through the service layer
+# ---------------------------------------------------------------------------
+
+def test_service_provider_failure_persists_deterministic_fallback(client):
+    """A failing LLM provider never reaches the persisted decision: the
+    service returns (and stores) the deterministic fallback with the
+    provider failure recorded in the audit metadata."""
+    from app.decision.llm import (
+        DecisionLLMProvider,
+        LLMProviderError,
+    )
+    from app.services import decision_service
+
+    class _FailingProvider(DecisionLLMProvider):
+        @property
+        def name(self):
+            return "failing"
+
+        def generate(self, context):
+            raise LLMProviderError("provider request timed out")
+
+    transaction_id = _transaction_id(client, "compound_failure", index=2)
+    baseline = client.get(
+        f"/api/v1/decisions/{transaction_id}"
+    ).json()
+    with client.factory() as session:  # type: ignore[attr-defined]
+        response = decision_service.get_decision(
+            session, transaction_id, provider=_FailingProvider()
+        )
+    assert response.decision_source == "DETERMINISTIC_FALLBACK"
+    assert response.recommended_action == baseline["recommended_action"]
+    assert "LLM provider failed" in response.metadata["provider_note"]
+    assert "timed out" in response.metadata["provider_note"]
+    persisted = client.get(
+        f"/api/v1/decisions/{transaction_id}"
+    ).json()
+    assert persisted["decision_source"] == "DETERMINISTIC_FALLBACK"
+    assert persisted["recommended_action"] == baseline["recommended_action"]
+
+
+# ---------------------------------------------------------------------------
 # Regression
 # ---------------------------------------------------------------------------
 

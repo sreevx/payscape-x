@@ -58,6 +58,80 @@ _SCAN_THREADS = 10
 _CACHE_TTL_SECONDS = 300
 _cache_lock = threading.Lock()
 _cache: dict = {}
+_refresh_inflight = False
+_scan_inflight: Optional[threading.Event] = None
+
+
+def _kick_off_refresh(
+    bind, ordered_instances: list[ScenarioInstance]
+) -> None:
+    """One background recompute at a time — callers never wait on expiry."""
+    global _refresh_inflight
+    with _cache_lock:
+        if _refresh_inflight:
+            return
+        _refresh_inflight = True
+
+    def refresh() -> None:
+        global _cache, _refresh_inflight  # noqa: PLW0603
+        try:
+            outcomes = _scan_parallel(bind, ordered_instances)
+            with _cache_lock:
+                _cache = {
+                    "outcomes": {"at": time.monotonic(), "outcomes": outcomes}
+                }
+        finally:
+            with _cache_lock:
+                _refresh_inflight = False
+
+    threading.Thread(
+        target=refresh, name="summary-cache-refresh", daemon=True
+    ).start()
+
+
+def _compute_or_join(
+    bind, ordered_instances: list[ScenarioInstance]
+) -> list[str]:
+    """Cold compute with single-flight semantics.
+
+    When the cache is empty (first request, or the startup warm-up is still
+    running) exactly one scan runs and concurrent callers join it instead
+    of duplicating the work and competing for database connections.
+    """
+    global _cache, _scan_inflight
+    while True:
+        with _cache_lock:
+            entry = _cache.get("outcomes")
+            if (
+                entry is not None
+                and time.monotonic() - entry["at"] < _CACHE_TTL_SECONDS
+            ):
+                return entry["outcomes"]
+            event = _scan_inflight
+            if event is None:
+                event = threading.Event()
+                _scan_inflight = event
+                owner = True
+            else:
+                owner = False
+        if owner:
+            try:
+                outcomes = _scan_parallel(bind, ordered_instances)
+                with _cache_lock:
+                    _cache = {
+                        "outcomes": {
+                            "at": time.monotonic(),
+                            "outcomes": outcomes,
+                        }
+                    }
+            finally:
+                with _cache_lock:
+                    _scan_inflight = None
+                event.set()
+            return outcomes
+        # Another scan (e.g. the startup warm-up) is already running — wait
+        # for it to store its result instead of scanning in parallel.
+        event.wait(timeout=120.0)
 
 
 # ---------------------------------------------------------------------------
@@ -140,22 +214,41 @@ def _scan_parallel(
     return [outcome for outcome in results if outcome is not None]
 
 
+def _cached_outcomes(
+    bind, ordered_instances: list[ScenarioInstance]
+) -> list[str]:
+    """Memoized outcome scan (PostgreSQL path only).
+
+    - fresh entry  -> served immediately;
+    - stale entry  -> served immediately (deterministic output is identical
+      on the frozen seeded dataset) while one background thread recomputes,
+      so a TTL expiry never strands a request on the multi-second scan;
+    - no entry     -> computed once; concurrent callers and the startup
+      warm-up join the in-flight scan rather than duplicating it.
+    """
+    global _cache
+    with _cache_lock:
+        entry = _cache.get("outcomes")
+        if (
+            entry is not None
+            and time.monotonic() - entry["at"] < _CACHE_TTL_SECONDS
+        ):
+            return entry["outcomes"]
+        stale = entry["outcomes"] if entry is not None else None
+    if stale is not None:
+        _kick_off_refresh(bind, ordered_instances)
+        return stale
+    return _compute_or_join(bind, ordered_instances)
+
+
 def _dataset_outcomes(
     session: Session, ordered_instances: list[ScenarioInstance]
 ) -> list[str]:
     """Classify every journey (memoized on PostgreSQL, TTL-bounded)."""
-    global _cache
     bind = session.get_bind()
     if getattr(bind, "dialect", None) is None or bind.dialect.name != "postgresql":
         return _scan_sequential(session, ordered_instances)
-    with _cache_lock:
-        entry = _cache.get("outcomes")
-        if entry is not None and time.monotonic() - entry["at"] < _CACHE_TTL_SECONDS:
-            return entry["outcomes"]
-    outcomes = _scan_parallel(bind, ordered_instances)
-    with _cache_lock:
-        _cache = {"outcomes": {"at": time.monotonic(), "outcomes": outcomes}}
-    return outcomes
+    return _cached_outcomes(bind, ordered_instances)
 
 
 # ---------------------------------------------------------------------------

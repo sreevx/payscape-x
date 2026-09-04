@@ -55,6 +55,40 @@ class DecisionResponse(BaseModel):
     metadata: dict = {}
 
 
+class DecisionListItem(BaseModel):
+    """One row of the read-only Action Center queue (Part 8).
+
+    Built from the persisted `decisions` audit rows plus the payment/order
+    context they reference. `outcome` is the deterministic business outcome
+    recorded at decision time in the row metadata — never recomputed here.
+    """
+
+    decision_id: str
+    transaction_id: str
+    # Human order reference (e.g. ORD-2026-1145).
+    external_order_id: str
+    amount: str
+    currency: str
+    payment_status: str
+    outcome: Optional[str] = None
+    decision_source: str
+    recommended_action: str
+    reason: str
+    decision_confidence: float
+    evidence_confidence: float
+    approval_status: str
+    human_approval_required: bool
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+class DecisionListResponse(BaseModel):
+    """Paginated read-only view of recorded decisions (newest first)."""
+
+    items: list[DecisionListItem]
+    total: int
+
+
 class ApproveDecisionRequest(BaseModel):
     """Body of POST /api/v1/decisions/{decision_id}/approve."""
 

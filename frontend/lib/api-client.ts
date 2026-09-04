@@ -11,6 +11,7 @@ import type {
   ApiCompoundFailure,
   ApiConsistencyResult,
   ApiDecision,
+  ApiDecisionListResponse,
   ApiEventStreamResponse,
   ApiEvidenceReport,
   ApiFailureListResponse,
@@ -216,6 +217,11 @@ export function runSimulation(
     method: "POST",
     body: JSON.stringify({ intervention }),
   });
+}
+
+/** GET /api/v1/decisions — recorded decisions, newest first (Part 8). */
+export function getDecisions(): Promise<ApiDecisionListResponse> {
+  return request<ApiDecisionListResponse>("/api/v1/decisions");
 }
 
 /** GET /api/v1/decisions/{id} — the auditable AI decision (Part 8). */

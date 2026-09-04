@@ -14,7 +14,6 @@
  */
 
 import type {
-  ActionQueueItem,
   ActiveInvestigation,
   ActivityItem,
   AppNotification,
@@ -282,19 +281,6 @@ export const NOTIFICATIONS: AppNotification[] = [
   { id: "ntf_2", title: "Failed outcome", body: "payx_8d4f6c0b — delivery failed after capture.", timestamp: "2026-09-03T10:05:00Z", unread: true, tone: "danger" },
   { id: "ntf_3", title: "Pattern updated", body: "Paid, Not Fulfilled — 14 transactions this week.", timestamp: "2026-09-03T09:30:00Z", unread: false, tone: "info" },
   { id: "ntf_4", title: "Event ingestion resumed", body: "Structured event stream reconnected.", timestamp: "2026-09-03T08:00:00Z", unread: false, tone: "neutral" },
-];
-
-/* ------------------------------------------------------------------ */
-/* Action center                                                       */
-/* ------------------------------------------------------------------ */
-
-export const ACTION_QUEUE: ActionQueueItem[] = [
-  { id: "act_a1", transactionId: "payx_8d4f6c0b", kind: "Refund review", priority: "critical", status: "in_review", assignedTo: "Operations Analyst", createdAt: "2026-09-03T08:12:00Z" },
-  { id: "act_a2", transactionId: "payx_0c7e5b8d", kind: "Refund confirmation", priority: "high", status: "needs_approval", assignedTo: "Ops Lead", createdAt: "2026-09-03T07:57:00Z" },
-  { id: "act_a3", transactionId: "payx_7a1d8e2f", kind: "Restock & re-fulfillment", priority: "high", status: "queued", assignedTo: "Inventory Ops", createdAt: "2026-09-03T09:06:00Z" },
-  { id: "act_a4", transactionId: "payx_4a8f2c7e", kind: "Customer outreach", priority: "medium", status: "queued", assignedTo: "Support", createdAt: "2026-09-03T09:14:00Z" },
-  { id: "act_a5", transactionId: "payx_5f8b1d7a", kind: "Payment verification", priority: "medium", status: "in_review", assignedTo: "Operations Analyst", createdAt: "2026-09-03T09:51:00Z" },
-  { id: "act_a6", transactionId: "payx_7b3e9c5d", kind: "Fulfillment check", priority: "low", status: "queued", assignedTo: "Fulfillment Ops", createdAt: "2026-09-03T08:35:00Z" },
 ];
 
 /* ------------------------------------------------------------------ */
