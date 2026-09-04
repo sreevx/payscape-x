@@ -1,3 +1,5 @@
+import { Suspense } from "react";
+
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
@@ -161,24 +163,33 @@ export default async function TransactionDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  return <TransactionPage id={id} />;
+}
 
+/** Minimal loading card while the deterministic engine region streams in. */
+function EngineAnalysisLoading() {
+  return (
+    <Card size="sm">
+      <CardContent>
+        <p className="animate-pulse text-xs text-muted-foreground">
+          Running the deterministic engines — journey, evidence, consistency,
+          outcome, simulation and decision…
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * Fast shell: streams the back-link and transaction header as soon as the
+ * lightweight transaction fetch resolves, so opening the page never waits
+ * on the deterministic engines. Engine sections stream in below once they
+ * finish. Final DOM order is unchanged from the single-block render.
+ */
+async function TransactionPage({ id }: { id: string }) {
   let detail;
-  let analysis;
-  let simulation;
-  let decision;
   try {
-    // Four parallel calls, not nine: /analysis/{id} returns the journey,
-    // evidence, consistency, outcome, compound-failure and impact sections
-    // from ONE deterministic pipeline reconstruction (the individual
-    // endpoints each reconstruct the journey from scratch — calling them
-    // all here made the backend do the same computation up to eight times
-    // per page view). Simulations and the decision add their own stages.
-    [detail, analysis, simulation, decision] = await Promise.all([
-      getTransaction(id),
-      getAnalysis(id),
-      getSimulations(id),
-      getDecision(id),
-    ]);
+    detail = await getTransaction(id);
   } catch (error) {
     if (error instanceof ApiError && error.status === 404) {
       notFound();
@@ -195,19 +206,9 @@ export default async function TransactionDetailPage({
     );
   }
 
-  // Sections are fed by the combined analysis payload; `analysis` is
-  // non-null whenever the request succeeded, so the guards below keep
-  // working unchanged.
-  const journey = analysis?.journey ?? null;
-  const evidence = analysis?.evidence ?? null;
-  const consistency = analysis?.consistency ?? null;
-  const outcome = analysis?.outcome ?? null;
-  const failure = analysis?.compound_failure ?? null;
-  const impact = analysis?.impact ?? null;
-
-  const milestones = journeyMilestones(detail.events);
   const paymentTone = PAYMENT_STATUS_TONES[detail.payment_status] ?? "neutral";
   const orderTone = ORDER_STATUS_TONES[detail.order_status] ?? "neutral";
+  const milestones = journeyMilestones(detail.events);
 
   return (
     <div className="mx-auto flex max-w-7xl flex-col gap-4">
@@ -238,6 +239,64 @@ export default async function TransactionDetailPage({
         </div>
       </div>
 
+      <Suspense fallback={<EngineAnalysisLoading />}>
+        <TransactionEngines
+          id={id}
+          detail={detail}
+          milestones={milestones}
+        />
+      </Suspense>
+    </div>
+  );
+}
+
+/**
+ * Engine region: pipeline strip, business outcome, narrative steps and the
+ * advanced technical panels. Same three parallel deterministic calls as
+ * before (analysis covers journey / evidence / consistency / outcome /
+ * compound failure / impact from one reconstruction), streamed inside a
+ * Suspense boundary so the header above is never blocked by them.
+ */
+async function TransactionEngines({
+  id,
+  detail,
+  milestones,
+}: {
+  id: string;
+  detail: ApiTransactionDetail;
+  milestones: ReturnType<typeof journeyMilestones>;
+}) {
+  let analysis;
+  let simulation;
+  let decision;
+  try {
+    [analysis, simulation, decision] = await Promise.all([
+      getAnalysis(id),
+      getSimulations(id),
+      getDecision(id),
+    ]);
+  } catch {
+    // An engine failing no longer blanks the already-streamed header — the
+    // error card renders in this region with the same honest copy.
+    return (
+      <Card size="sm">
+        <ErrorState
+          title="Backend unavailable"
+          description="The transaction analysis API is unreachable. Start the backend and seed the database, then try again."
+        />
+      </Card>
+    );
+  }
+
+  const journey = analysis?.journey ?? null;
+  const evidence = analysis?.evidence ?? null;
+  const consistency = analysis?.consistency ?? null;
+  const outcome = analysis?.outcome ?? null;
+  const failure = analysis?.compound_failure ?? null;
+  const impact = analysis?.impact ?? null;
+
+  return (
+    <>
       {/* Pipeline narrative — the PAYSCAPE-X analysis story at a glance */}
       <Card size="sm">
         <CardContent className="gap-2">
@@ -552,7 +611,7 @@ export default async function TransactionDetailPage({
           ) : null}
         </CardContent>
       </Card>
-    </div>
+    </>
   );
 }
 
